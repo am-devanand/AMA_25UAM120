@@ -1,127 +1,205 @@
-# Mini Project — Changelog and technical notes
+# Mini Project — Full changelog (reference code → current)
 
-This document describes the **transaction processing** program, every major code change, how **`accounts.txt`** is produced, and how the **`working_package/`** folder is meant to be used for demos and submission.
+This document lists **every major change** made from the **original textbook-style / Replit reference program** through the **current `trans.c`**, plus how **`accounts.txt`** works and what **`working_package/`** contains. Shorter reference sections (menu, build) follow the detailed history.
 
 ---
 
 ## Table of contents
 
-1. [What the program does](#1-what-the-program-does)
-2. [Output files and `accounts.txt`](#2-output-files-and-accountstxt)
-3. [Menu reference](#3-menu-reference)
-4. [Assignment-aligned improvements](#4-assignment-aligned-improvements)
-5. [Code quality and robustness](#5-code-quality-and-robustness)
-6. [Working package folder](#6-working-package-folder)
+1. [Baseline: what the original program did](#1-baseline-what-the-original-program-did)
+2. [Complete change list (scratch → now)](#2-complete-change-list-scratch--now)
+3. [What the program does today (summary)](#3-what-the-program-does-today-summary)
+4. [Output files and `accounts.txt`](#4-output-files-and-accountstxt)
+5. [Menu reference](#5-menu-reference)
+6. [Repository layout](#6-repository-layout)
 7. [Build and test](#7-build-and-test)
 8. [Demo talking points](#8-demo-talking-points)
 
 ---
 
-## 1. What the program does
+## 1. Baseline: what the original program did
 
-The program maintains up to **100** fixed-size records in a binary file **`credit.dat`**. Each record is a **`struct client_data`** holding:
+The starting point (typical Deitel-style **transaction processing** example, e.g. [Replit reference](https://replit.com/@ashokb/Unit5Programs#trans.c)) behaved roughly as follows:
 
-| Field | Meaning |
-|--------|--------|
-| `acctNum` | Customer account number (also **0** = empty slot). |
-| `lastName`, `firstName` | Fixed-length C strings. |
-| `balance` | `double` balance. |
+| Aspect | Original behavior |
+|--------|---------------------|
+| **Data file** | Binary **`credit.dat`**, treated as an array of **100** fixed-size records. |
+| **Record layout** | Account number, last name, first name, balance (C `struct`, often named like `clientData`). |
+| **Indexing** | Account **n** (1-based) at byte offset **`(n - 1) × sizeof(struct …)`**; **`fseek`** + **`fread`** / **`fwrite`**. |
+| **Empty slot** | **`acctNum == 0`** meaning “unused record.” |
+| **Open mode** | **`fopen("credit.dat", "rb+")`** only — if the file **did not exist**, the program failed instead of creating it. |
+| **Uninitialized file** | No guarantee of 100 initialized slots on first run; random access could read **garbage** or fail expectations. |
+| **Menu** | Fewer options; **“end program”** was typically the **last** small integer (e.g. **5**), not **9**. |
+| **`accounts.txt`** | Produced by scanning the binary file and writing text (often **`accounts.txt`**). |
+| **`textFile` / export loop** | Often written as **`while (!feof(f)) { fread(...); … }`** — a **classic bug**: **`feof`** becomes true only **after** a failed read, so the loop can run **one extra time** (duplicate last line or garbage). |
+| **Input** | **`scanf`** without always clearing the rest of the line on failure → user could get **stuck** repeating invalid input. |
+| **Types vs format** | **`scanf("%d", &unsigned_var)`** — undefined behavior; **`%u`** is required for **`unsigned int`**. |
+| **I/O robustness** | **`fread`** / **`fwrite`** return values often ignored; **`fflush`** after writes rarely used. |
+| **`main`** | Often omitted an explicit **`return 0;`** / status code. |
+| **Naming** | Mixed **camelCase** (`updateRecord`, `textFile`) and **`struct clientData`**. |
 
-**Random access:** menu account numbers **1 … 100** map to file byte offset  
-`(account_number - 1) × sizeof(struct client_data)`  
-from the start of `credit.dat`. The code uses **`fseek`**, **`fread`**, and **`fwrite`**.
-
-**Empty slots:** `acctNum == 0` means “no account here.” On first run (or if the file is missing or the wrong length), **`initialize_file`** writes **100** blank records so every slot can be read safely.
+That baseline is the **“from scratch”** reference; everything in [section 2](#2-complete-change-list-scratch--now) is what was **changed or added** on top of it.
 
 ---
 
-## 2. Output files and `accounts.txt`
+## 2. Complete change list (scratch → now)
 
-### `accounts.txt` — main human-readable export
+Below is a **single consolidated list** of improvements, in logical groups (not every Git commit). Together they describe the path from the original code to the current project.
 
-This file is the bridge between the **binary** database and something you can open in a text editor, diff in Git, or attach to a report.
+### 2.1 File lifecycle: create, validate, initialize
 
-**What each run writes**
+| Change | Why |
+|--------|-----|
+| **`open_data_file(path)`** | Try **`rb+`** first; if missing, **`wb+`** and create the database instead of exiting immediately. |
+| **`initialize_file`** | Write **100** blank records (`acctNum == 0`, empty names, balance **0.0**) so every slot exists and is predictable. |
+| **`validate_file`** | **`fseek`** to end, **`ftell`** size; if size ≠ **`100 × sizeof(struct client_data)`**, treat as corrupt/wrong and **reinitialize**, then **`rewind`**. |
+| **`fflush`** after initializing / writing records | Reduces risk of buffered data not appearing on disk during demos or abrupt exit. |
 
-- A short **banner** naming the source binary (`credit.dat`) and what each column means.
-- A **timestamp** (local wall-clock time via `strftime`).
-- A **table** with clear headers:
-  - **Acct No.** — account number  
-  - **Last name** / **First name**  
-  - **Balance** — two decimal places, fixed column width  
-- A **footer** with:
-  - **Total active accounts** (count of rows where `acctNum != 0`)
-  - **Aggregate balance** (sum of those balances)
+### 2.2 Menu and features (functionality)
 
-**When it is updated**
+| Change | Why |
+|--------|-----|
+| **Option 5 — list all accounts** (`**list_accounts**`) | Meets “list all account information” style requirements; shows **count** and **total balance** across active accounts. |
+| **Option 6 — search / display one account** (`**display_account**`) | Demonstrates **random read** only: **`fseek`**, **`fread`**, clear message if slot is empty. |
+| **Option 7 — debit / withdraw** (`**debit_transaction**`) | Faculty-style “ATM debit” story: positive amount, account must exist, **no overdraft** (`balance >= amount`). |
+| **Option 8 — sorted text export** (`**write_sorted_text_file**` → **`accounts_sorted.txt`**) | “Sort records” requirement: load non-empty records, **`qsort`** by **last name**, then **first name**; comparator is **file-scope** (standard C, Windows-friendly), not a nested function. |
+| **Exit moved to option 9** | Extra features inserted as options **5–8**; **9** ends the program. |
+| **Option 1** | Regenerates **`accounts.txt`**; label updated to note it is **also auto-synced** after data changes and at startup (see [section 4](#4-output-files-and-accountstxt)). |
 
-1. **On program start** — once `credit.dat` is opened successfully, the program calls **`sync_accounts_txt`**, which rewrites `accounts.txt` from the current binary data (silent unless `fopen` fails; errors use `perror`).
-2. **After every successful change** to stored data — **`new_record`**, **`update_record`**, **`delete_record`**, and **`debit_transaction`** each call **`sync_accounts_txt`** after a successful `fwrite` + `fflush`, so the text file stays aligned with `credit.dat` without forcing the user to remember menu option **1**.
-3. **Menu option 1** — **`text_file`** calls the same exporter with **verbose** output on the terminal (path, row count, aggregate balance).
+### 2.3 Correctness: loops, formats, seeks
 
-So **`accounts.txt` always reflects account numbers and the rest of the details** stored in `credit.dat` for every active account, plus summary lines suitable for marking or demos.
+| Change | Why |
+|--------|-----|
+| **Replace `while (!feof(...))` + `fread`** with **`while (fread(...) == 1)`** everywhere records are scanned | Only process a row when a full record was actually read; avoids **duplicate last row** / garbage. |
+| **`scanf`** uses **`%u`** for **`unsigned int`** (menu choice, account numbers where applicable) | Avoids **undefined behavior** from **`%d`** with an **`unsigned int *`**. |
+| **`printf`** for unsigned accounts uses **`%u`** where appropriate | Consistent with type. |
+| **Backward seek after `fread` before `fwrite`** | Implemented as **`rewind_write_record`**: **`fseek(fp, -(long)sizeof(struct client_data), SEEK_CUR)`** with **return check** — avoids **mixed sign** bugs on some platforms and satisfies stricter compilers. |
+| **`update_record`**: `double transaction` scoped in a block after confirming account exists | Avoids “mixed declarations and code” issues on older / stricter C compilers (e.g. some Windows toolchains). |
+
+### 2.4 Input safety (beginner- and demo-friendly)
+
+| Change | Why |
+|--------|-----|
+| **`clear_input_line`** | After a bad **`scanf`**, read until newline or EOF so the next prompt does not see stale characters (**no infinite invalid loop**). |
+| **`get_account_number`** | Re-prompt until input is a valid slot **1 … 100** — prevents bad **`fseek`** targets. |
+| **`get_double`** / **`get_positive_double`** | Reliable numeric input for transactions and debits; positive-only for debit amount. |
+| **`fflush(stdout)`** before prompts that use **`scanf`** | Helps when **`stdout`** is fully buffered (pipes, some IDEs). |
+| **`stdin_broken`** (`**feof**` / **`ferror**` on stdin) | If input is a **closed pipe** or broken stream, **`exit(EXIT_FAILURE)`** instead of spinning forever (useful for **`make demo`** scripts). |
+
+### 2.5 Read/write error handling
+
+| Change | Why |
+|--------|-----|
+| Check **`fread(...) == 1`** after reading a single record; on failure print a message and **return** | Avoids using partially read / garbage data. |
+| Check **`fwrite`** return values | Detect disk full / I/O errors. |
+| **`ferror`** after long **`fread`** loops (export, list, sorted read path) | Surfaces read errors instead of silent truncation. |
+| **`fclose`** return value checked | On main database file and on text export files. |
+
+### 2.6 Naming, structure, and `main`
+
+| Change | Why |
+|--------|-----|
+| **`struct client_data`** (was-style `clientData`) | Clearer, conventional snake-style type name. |
+| **Snake_case function names** (`**update_record**`, `**text_file**`, …) | Consistent style and easier grep/read. |
+| **`main(int argc, char *argv[])`** with **`(void)argc; (void)argv;`** | Silences unused-parameter warnings under **`-Wall -Wextra`**. |
+| **`return EXIT_SUCCESS`** / **`EXIT_FAILURE`** | Proper process exit status; failure if database **`fclose`** fails. |
+
+### 2.7 Business rules (domain logic)
+
+| Change | Why |
+|--------|-----|
+| **Update transaction** cannot drive **balance &lt; 0** | “No negative balance” policy. |
+| **New account** cannot have **negative opening balance** | Same policy at creation. |
+| **Debit** requires **amount &gt; 0** and **`balance >= amount`** | ATM-like withdraw without overdraft. |
+
+### 2.8 Text export, columns, and auto-sync (`accounts.txt`)
+
+| Change | Why |
+|--------|-----|
+| **`print_account_header`** / **`print_account_row`** | **Single place** for column widths and labels; used by **terminal list**, **single-account display**, **`accounts.txt`**, and sorted export body. |
+| **Wider columns** (e.g. **Acct No.**, **Last name**, **First name**, **Balance**) | Easier to read in editors and when names are long. |
+| **`TEXT_EXPORT_PATH`** / **`TEXT_SORTED_PATH`** macros | One place to change filenames. |
+| **`#include <time.h>`** and **`strftime`** in exports | **Timestamp** on human-readable exports for lab reports. |
+| **Banner + footer** on **`accounts.txt`** | Explains source file, column meaning, **count of active accounts**, **aggregate balance**. |
+| **`export_accounts_text_file`** + **`sync_accounts_txt`** | Central implementation; **`sync_accounts_txt`** runs **silently** after startup and after successful **add / update / delete / debit** so **`accounts.txt`** stays aligned with **`credit.dat`**. |
+| **`text_file` (menu 1)** | Calls the same exporter with **verbose** terminal summary. |
+| **Sorted file (`accounts_sorted.txt`)** | Extra banner lines (title, time, **record count**); same row printers for consistency. |
+
+### 2.9 Field sizes and `scanf` for new accounts
+
+| Change | Why |
+|--------|-----|
+| **`LAST_NAME_LEN`**, **`FIRST_NAME_LEN`** in the `struct` | Avoid magic numbers in declarations. |
+| **`snprintf`** into a format string for **`scanf`** in **`new_record`** | Max token widths stay **in sync** with array sizes (**`N-1`** for **`%s`**). |
+
+### 2.10 Repository, docs, and runnable bundle
+
+| Change | Why |
+|--------|-----|
+| **`working_package/`** | Self-contained **Makefile**, **`demo_seed.txt`**, **`trans.c`**, **`README.md`**, sample outputs — easy zip/demo without hunting paths. |
+| **`make demo`** | Clean **`credit.dat`** / exports, run **`trans`** non-interactively, produce a known-good **`accounts.txt`**. |
+| **Root `README.md`** | Points to **`working_package/`** and this changelog. |
+| **`.gitignore`** | Ignores built **`trans`** binaries (root and package); avoids committing executables. |
+| **Remote `origin`** | Pushes target **[`am-devanand/AMA_25UAM120`](https://github.com/am-devanand/AMA_25UAM120)** (folder/repo rename on GitHub); **`trans` binary removed from Git** — rebuild with **`gcc`** or **`make`**. |
+
+---
+
+## 3. What the program does today (summary)
+
+- **100** records in **`credit.dat`**; **`struct client_data`**; empty if **`acctNum == 0`**.
+- **Random access** via **`fseek`** using **`(slot - 1) × sizeof(struct client_data)`**.
+- **Menu 1–9** as in [section 5](#5-menu-reference); **`accounts.txt`** export with **sync** as in [section 4](#4-output-files-and-accountstxt).
+
+---
+
+## 4. Output files and `accounts.txt`
+
+### `accounts.txt`
+
+- **Banner**: states that the export comes from **`credit.dat`**, describes columns.
+- **Timestamp**: local time via **`strftime`**.
+- **Table**: **Acct No.**, **Last name**, **First name**, **Balance** (fixed-width columns).
+- **Footer**: **total active accounts**, **aggregate balance**.
+
+**Updated when:** (1) program start, after **`credit.dat`** opens; (2) after each successful **add / update / delete / debit**; (3) menu **1** (with a short confirmation line).
 
 ### `accounts_sorted.txt`
 
-Created by menu **8**. Same column layout as the table above, with a **sorted** banner (sort order: **last name**, then **first name**, using **`qsort`**). This file is **not** auto-refreshed on every mutation (only when the user asks for option **8**).
+- Written only when the user chooses menu **8**; sorted by **last name**, then **first name** (**`qsort`**); includes its own header block with time and row count.
 
 ---
 
-## 3. Menu reference
+## 5. Menu reference
 
 | # | Action |
 |---|--------|
 | **1** | Regenerate **`accounts.txt`** (also auto-updated after changes and at startup). |
-| **2** | Update balance (transaction); balance cannot go **negative**. |
-| **3** | Add account in an empty slot; opening balance cannot be negative. |
+| **2** | Update balance; cannot go **negative**. |
+| **3** | Add account; opening balance cannot be **negative**. |
 | **4** | Delete account (blank record). |
-| **5** | List all active accounts on the terminal + totals. |
-| **6** | Look up one account by number. |
-| **7** | Debit (withdraw); amount **> 0**; **no overdraft**. |
+| **5** | List all active accounts + totals. |
+| **6** | Display one account by number. |
+| **7** | Debit (withdraw); **positive** amount; **no overdraft**. |
 | **8** | Write **`accounts_sorted.txt`**. |
 | **9** | Exit. |
 
 ---
 
-## 4. Assignment-aligned improvements
+## 6. Repository layout
 
-- **First-run / corrupt file handling:** `open_data_file` → `rb+` or create with `wb+` + **`initialize_file`**; **`validate_file`** checks total file size.
-- **Listing and totals** (menu **5**): count and sum of balances.
-- **Innovation-style features:** debit transaction (**7**), sorted export (**8**), strong input validation (**`get_account_number`**, **`get_double`**, **`get_positive_double`**), negative-balance rules.
-- **Classic bug fix:** record iteration uses **`while (fread(...) == 1)`**, not **`while (!feof(...))`**, so the last record is never duplicated.
-- **Unsigned I/O:** **`%u`** where values are `unsigned int`.
-- **Naming:** **`struct client_data`**, **snake_case** functions.
-- **Exit codes:** **`EXIT_SUCCESS`** / **`EXIT_FAILURE`** from **`main`**; **`fclose`** on the database file is checked.
-
----
-
-## 5. Code quality and robustness
-
-- **Shared formatting:** **`print_account_header`** / **`print_account_row`** keep the terminal list, single-account view, and text exports visually consistent.
-- **Field size macros:** **`LAST_NAME_LEN`**, **`FIRST_NAME_LEN`**; **`snprintf`** builds the **`scanf`** pattern in **`new_record`** so widths stay consistent.
-- **Portable backward seek:** **`rewind_write_record`** uses **`-(long)sizeof(struct client_data)`** with **`SEEK_CUR`** and checks **`fseek`**.
-- **`fflush`** after writes to `credit.dat` for predictable persistence during demos.
-- **`ferror`** after long reads; **`fclose`** checked on export files.
-- **`fflush(stdout)`** before interactive **`scanf`**; **`stdin_broken`** avoids infinite loops when **stdin** hits **EOF** (e.g. closed pipe).
-
----
-
-## 6. Working package folder
-
-The directory **`working_package/`** is a **portable bundle** for labs and submission:
-
-- **`trans.c`** — same source as the repository root (copy updated whenever the main program changes).
-- **`Makefile`** — `make`, `make clean`, **`make demo`** (wipes old `credit.dat` / exports, runs **`trans`** with **`demo_seed.txt`**), **`make run`** (interactive).
-- **`demo_seed.txt`** — scripted session that creates **three** sample accounts and exits.
-- **`README.md`** — short instructions for that folder only.
-
-Use **`make demo`** inside **`working_package/`** to get a known-good **`accounts.txt`** with real account numbers and names without typing.
+| Path | Role |
+|------|------|
+| `trans.c` | All program logic (source of truth). |
+| `changes.md` | This full changelog + reference sections. |
+| `README.md` | Course brief + pointer to **`working_package/`**. |
+| `working_package/` | Makefile, demo seed, copy of `trans.c`, local README, optional sample `accounts.txt` / `credit.dat` from demo. |
+| `.gitignore` | Build artifacts (`trans`, `*.o`). |
 
 ---
 
 ## 7. Build and test
 
-**Repository root**
+**Root**
 
 ```bash
 gcc -Wall -Wextra -std=c11 trans.c -o trans
@@ -136,29 +214,16 @@ make
 make demo
 ```
 
-Inspect **`accounts.txt`** after **`make demo`** to verify account numbers and balances.
-
 ---
 
 ## 8. Demo talking points
 
-- **Random access:** “Slot **n** is offset **(n−1) × record size**; I **`fseek`** there before **`fread`**/**`fwrite`**.”
-- **Empty record:** “**`acctNum == 0`** means unused slot.”
-- **`accounts.txt`:** “It’s regenerated from **`credit.dat`** with a timestamp and totals; it stays in sync after each add, update, delete, or debit.”
-- **Read loop:** “I stop when **`fread`** returns **0**, not when **`feof`** flips, so I never print a phantom row.”
+- **Random access:** “Slot **n** is at offset **(n−1) × record size**; I **`fseek`** then **`fread`**/**`fwrite`**.”
+- **Empty slot:** “**`acctNum == 0`** means no customer in that slot.”
+- **`feof` bug:** “**`feof`** is true only after you read past EOF, so a **`while (!feof)`** loop can run one time too many; I loop while **`fread == 1`**.”
+- **`accounts.txt`:** “It mirrors **`credit.dat`** with account number, names, balance, time, and totals; it refreshes on start and after each change.”
+- **Input:** “If **`scanf`** fails, I clear the line and ask again; if stdin is closed, I exit instead of looping.”
 
 ---
 
-## Files in this repository (typical)
-
-| Path | Role |
-|------|------|
-| `trans.c` | Source of truth for program logic. |
-| `changes.md` | This document (root). |
-| `working_package/` | Runnable bundle + demo seed (see its `README.md`). |
-| `README.md` | Official course brief and rubric pointers. |
-| `.gitignore` | Ignores built `trans` binaries (optional patterns for generated data). |
-
----
-
-*Last expanded: documentation pass including `accounts.txt` export behavior and `working_package/` layout.*
+*This file is the authoritative “what changed from the original mini project code” narrative for grading and demos.*

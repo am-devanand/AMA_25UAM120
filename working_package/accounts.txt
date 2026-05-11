@@ -2,13 +2,15 @@
   ACCOUNT REGISTER — text export from binary data: credit.dat
 ======================================================================
   Each data row: account number | last name | first name | balance
-  Generated: 2026-05-11 11:20:58 (local)
+  Generated: 2026-05-11 11:20:19 (local)
 ----------------------------------------------------------------------
 
 Acct No.  Last name           First name           Balance
 1         Kumar               Ravi                 1250.00
+5         Doe                 Jane                 3200.50
+12        Lee                 Alex                 1500.00
 
 ----------------------------------------------------------------------
-Total active accounts: 1
-Aggregate balance:               1250.00
+Total active accounts: 3
+Aggregate balance:               5950.50
 ======================================================================

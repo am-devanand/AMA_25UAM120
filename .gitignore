@@ -1,0 +1,9 @@
+# Local build artifacts
+trans
+working_package/trans
+*.o
+
+# Generated runtime data (optional: remove these lines if you want to commit samples)
+# credit.dat
+# accounts.txt
+# accounts_sorted.txt

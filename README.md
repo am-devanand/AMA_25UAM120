@@ -1,6 +1,10 @@
 # Transaction Processing System  
 ### Mini Project – 24UCS271 Lab
 
+### Runnable bundle in this repo
+
+For a **self-contained folder** with `Makefile`, sample scripted input, and the same `trans.c` as the root, use **`working_package/`**. Run `make demo` there to build, create sample accounts, and generate **`accounts.txt`** (account number, names, balance, timestamp, and totals). See **`working_package/README.md`** and **`changes.md`** for full technical notes.
+
 ---
 
 ## Objective
